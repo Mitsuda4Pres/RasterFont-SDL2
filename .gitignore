@@ -1,4 +1,4 @@
 sdl2.sh
 *.swp
-build
+build/*
 !build/pgshell.html
