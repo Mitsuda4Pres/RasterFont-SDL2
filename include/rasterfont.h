@@ -38,12 +38,12 @@ enum RF_CharacterType {
 
 //Line structure
 struct RF_Line {
-	SDL_Point a, b;
+	SDL_FPoint a, b;
 };
 
 //The basic information for a quadratic bezier curve. The degrees of accuracy will be determined by scale.
 struct RF_Quad_Bezier {
-	SDL_Point a, b, c;
+	SDL_FPoint a, b, c;
 };
 
 //The data needed  for a character is tricky. If it's just a set of points, the function won't know where to draw the lines, how to connect them.
@@ -82,6 +82,7 @@ struct RF_Font {
 	int total_characters;   //spell out "characters' to avoid confusion with C type char.
 	//struct RF_CharacterTemplate *characters; //array of characters malloced by total_characters: characters[total_characters]
 	struct RF_Character *characters;
+	struct RF_Character *filled_chars;	
 	int lookup[256];	//ASCII lookup table + 128 indices for custom characters. Could be a char?
 	float top_margin;		//Space above a line of text.
 	float btm_margin;		//Space below a line of text.
@@ -103,7 +104,6 @@ struct RF_FontScaled {
 
 
 
-
 //Function declarations
 //Scope: Obviously need the draw functions but we also need the scale functions. Underneath both of those we need a function to calculate a quadratic bezier curve. Alongside that we need
 //a function to check that all the resultant points in the curve are contained within the bounds of the letter box defined by "base_width" and "base_height" * scalar.
@@ -111,7 +111,7 @@ struct RF_FontScaled {
 //Draw
 //Receive a string and font and print to renderer. If font == NULL, search for a set default font.
 //int RF_printString(SDL_Renderer *renderer, float x, float y, char *str, struct RF_FontScaled *font);     //Go-to print function once scaling is implemented
-int RF_printStringOutline(SDL_Renderer *renderer, float x, float y, int size, char *str, struct RF_Font *font, int args);
+int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str, struct RF_Font *font, int args);
 
 //Set a default font for print operations. Late implementation.
 //int RF_setDefaultFont(struct RF_FontScaled *font);
@@ -119,7 +119,7 @@ int RF_printStringOutline(SDL_Renderer *renderer, float x, float y, int size, ch
 //Private: used by printString to draw each character in the string. At the draw stage, characters consist of only line segments for faster drawing.
 //int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, struct RF_FontScaled *font);
 int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y);
-int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y);
+int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y, int height);
 
 //Scale
 //Set the font size based on width in pixels. Chosen size must be >= smallest_width of RF_Font.
@@ -133,8 +133,10 @@ struct RF_Line *RF_calcQuadBezierAtScale(struct RF_CharacterTemplate c, float sc
 //Systematically run through the file format and print the contents in a table: UPPERCASE, LOWERCASE, NUMBERS, SYMBOLS
 struct RF_Font RF_loadFontFromFile(char *filename);
 struct RF_Font *RF_loadFontFromFileP(char *filename);
+SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line target);
 char *RF_removeFirstChar(char *s, int slen);
 struct RF_Character RF_makeCharacterStructFromFile(char *buffer);
+int RF_buildFilledCharacterArray(struct RF_Font *font);
 struct RF_Line RF_loadLineFromBuffer(char *b);
 int RF_parseLinePointFromBufferToStruct(char *buffer, int *head, int *tail);
 int RF_destroyFont(struct RF_Font *f);
@@ -156,7 +158,10 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 			//transform x/y by scale and position in the string
 			float tx = x + pos;
 			float ty = y;		//transform by scalar, additionally transform by any up/down shifts (lowercase j etc.)
-			RF_drawCharacterOutline(renderer, c, scalar, tx, ty);
+			if(args & OUTLINE) 
+				RF_drawCharacterOutline(renderer, c, scalar, tx, ty);
+			else
+				RF_drawCharacterFilled(renderer, c, scalar, tx, ty, font->base_height);
 			pos += width * scalar;			//When I get to varied width fonts, this should still work
 		}
 	}	
@@ -176,8 +181,33 @@ int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, floa
 }
 
 
-int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y){
+int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y, int height){
 	//How to  draw filled character....hmmmm.
+	//After some thinking I landed on a few posssible methods. The idea of a scanline finding turning "on/off" the fill routine
+	//The idea of just moving inward from the outer shape (could be fast but highly individualized per letter so real bad for design)
+	//Rasterize to an array and use flood fill.
+	//I'm going scanline. After doing a quick check on how this problem usually gets solved, turns out that's the most common way.
+	//But moreso, my initial concern was for when I introduce bezier curves, will I need to do calculus on them. But actually no,
+	//because I plan to scale the curves to line segments before performing the fill, so scanline fill it is. Consider ways to make this more
+	//performant at scale because it will get exponentially slower.
+	//
+	//Initial thought: Which infill information can we save in the .rff to inform a faster fill response. Is there static data that remains
+	//relevant at scale, or can "seed" the data we need at scale ad be used inthe scale up routine? Best performance is  going to be 
+	//to save a scaled font struct for each font size being used, or even a scaled string for font sizes being used rarely and for minimal characters.
+	//If infill data can be performed in the creation of the pre-scaled struct for fast infilling, that could solve the problem of performing a
+	//from-zero scanline iteration on every letter every print call.
+	//
+	//Let's get basic scanline fill off the ground first.	
+	//Ok, this kind of won't work on the fly. It seemss prohibitively nonperformant every line of every character to get intercepts off every line in the
+	//character outline. A has 12 lines, that's 12 intercept operations per line. 16x12=192 operations at base font size. 576 at 48px. Maybe that's really
+	//not much but it seems highly inefficient to me. We could perform all these operations one time at font load and store on the heap in an RF_fontScaled struct.
+	//Maybe the designed base width is not always the optimal font size for an application, so there can be a "default" param by which the first font is loaded.
+	//Then drawCharacterFilled draws the character by its infill data (a series of horrizontal lines, like a 3d printer) instead of outline, which will obviously be
+	//faster, but probably not noticeably so.
+	for(int i=0; i<height-1; i++){
+		
+	}	
+	
 
 	return 0;
 }
@@ -389,8 +419,142 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 			//If line_count is reached, advance offset and read new line count
 		}	
 	}
+	
+	RF_buildFilledCharacterArray(&font);
+
 	return font; //This is now a pretty big struct. I should get the pointer version working.
 }
+
+
+int RF_buildFilledCharacterArray(struct RF_Font *font){
+	//I will need to malloc font.filled_chars some how. Do I need to do a whole first pass just to find out how many segments, then a second
+	//to fill them in?
+	//Or use variable array size, remallocing as i go on pass one?
+	//
+	//start with an array size of 2 line segments per scanline. For 16 pt base font, full ascii set, this is only 128k once malloced by sizeof(RF_Line).
+	int array_size = font->base_height * font->total_characters * 4; //DEBUG: If we get a stack overflow OR out-of-bounds, check here first
+	font->filled_chars = malloc(array_size * sizeof(struct RF_Line));
+	int rows = font->base_height;
+	for(int i=0; i<font->total_characters; i++){	//character loop
+		//figure out how many segments then malloc then fill array with RF_Lines
+		//Create scratch array the size of the letter. Then populate with edge points. Do the scanline fill. Return the edge points on each scanline as segments.
+		//Ok, I just looked up what ttf does and it's similar to above. Grid fit with hinting then scanline/winding number fill.	
+		//I'm going to try to circumvent this with intercepts. Here goes nothing.
+		struct RF_Character c = font->characters[i];
+
+		//Point array to hold all the edge points in the character. Two segments on a line results in 4 SDL_FPoints. To be safe, I'll do 8. Free at end of character loop.
+		/*
+		SDL_FPoint **edges = calloc(rows, sizeof(SDL_FPPoint *));
+		if(edges == NULL){
+			font->error_msg = "Could not allocate filled character edge point array.\n";
+			return NULL;
+		}
+		for(int j=0; j<rows; j++){
+			edges[j] = calloc(8, sizeof(SDL_FPoint);
+			if(edges[j] == NULL){
+				font->error_msg = "Could not allocate row of filled character edge point array.\n"
+				return NULL;
+			}
+		}
+		int *segments_in_row = calloc(rows, sizeof(int)); //segments_in_row[16], to carry the index counts and reiterate
+		*/
+		SDL_FPoint *edges = calloc(8, sizeof(SDL_Point));
+		if(edges == NULL){
+			font->error_msg = "Could not allocate edge point array.\n";
+			return 1;
+		}
+		int seg_index = 0;
+		
+		for(int j=0; j<rows; j++){		//scanline loop
+			struct RF_Line scan = {0, j, font->base_width, j};	//testing scanline
+			int index = 0;
+			for(int k=0; k<c.total_segments; k++){	//segment loop
+				SDL_FPoint p = RF_findIntersectionWithScanline(scan, c.segments[k]);
+				if(p.x == -1){	//colinear
+					edges[index] = c.segments[k].a;
+					index++;
+					edges[index] = c.segments[k].b;
+					index++;
+				} else if(p.x != -2) {		//If there is a result
+					edges[index] = p;
+				   	index++;	
+				}
+			}
+			int toggle = 1;
+			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
+				for(int k=1; k<index; k++){
+					if(toggle == 1){
+						struct RF_Line l;
+						l.a = edges[k-1];
+						l.b = edges[k];
+						font->filled_chars[i].segments[seg_index] = l;
+						seg_index++;
+						toggle = 0;
+					} else
+						toggle = 1;
+				}
+			}
+		}
+		font->filled_chars[i].total_segments = seg_index;
+		//I should now have edges[] filled with all scanline intersection points. Index should tell me how many there are.
+		//Heck, can I be putting then straight into font->filled_chars[i] from the above loop?
+		/*
+		for(int j=0; j<rows; j++){
+			free(edges[j]);
+		}
+		free(edges);
+		*/
+		free(edges);
+	}
+	return 0;
+}
+
+//Specifically to find intercept with a horizontal scanline, not  for intercept of two lines.
+//Returns x coordinate of intersection with that  segment, otherwise -2,-2 for no intersection or -1,-1 for colinear.
+SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line target){
+	//Three possible returns: SDL_Point of intercept, no intercept, colinear.
+	//y = mx + b ---> b = y - mx
+	float ms = 0; //slope of scanline
+	float mt = (target.a.y - target.b.y) / (target.a.x - target.b.x);
+	float bs = scan.a.y;	//y-intercept of horizontal line is any of its y-values
+	float bt = target.a.y - (mt * target.a.x);	//plug in values of a point on line to find y-intercept
+	float x_ret;
+	SDL_FPoint result;
+	if(ms == mt && bs == bt){
+		result.x = -1;
+		result.y = -1;
+		return result; //colinear
+	}
+	if(ms == mt && bs != bt){
+		result.x = -2;
+		result.y = -2;
+		return result; //parallel
+	}
+	//ms * (x) + bs = mt * (x) + bt --> ms(x) - mt(x) = bt - bs --> (bt - bs) / (ms - mt)
+	x_ret = (bt - bs) / (ms - mt);
+	//is x_ret within the bounds of the target line segment?
+	int small_tx = target.a.x;
+	int big_tx = target.b.x;
+	if(small_tx > big_tx){
+		int holder = big_tx;
+		big_tx = small_tx;
+		small_tx = holder;
+	}
+	if(x_ret < small_tx || x_ret > big_tx){
+		result.x = -2;
+		result.y = -2;
+		return result;	//intersection is outside line segment
+	}
+	else{
+		result.x = x_ret;
+		result.y = (mt * x_ret) + bt;
+		return result;
+	}
+		
+}
+
+
+
 
 //Internal function to RF_loadFontFromFile() specifically to load one line of text into an RF_Line struct and pass
 //it back to the font.characters[n].segments[] array.

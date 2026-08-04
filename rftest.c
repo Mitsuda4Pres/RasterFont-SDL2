@@ -131,14 +131,14 @@ int initialize_window(context *ctx) {
 	printf("ctx->font width: %d\n", ctx->font.base_width);
 	printf("ctx->font height: %d\n", ctx->font.base_height);
 	printf("1st character: %c, lines: %d, offset: %d\n", ctx->font.characters[0].name, ctx->font.characters[0].total_segments, ctx->font.characters[0].offset);
-	printf("First line: %d, %d, %d, %d\n", ctx->font.characters[0].segments[0].a.x, ctx->font.characters[0].segments[0].a.y,ctx->font.characters[0].segments[0].b.x,ctx->font.characters[0].segments[0].b.y);
-	printf("Fifth line: %d, %d, %d, %d\n", ctx->font.characters[0].segments[4].a.x, ctx->font.characters[0].segments[4].a.y,ctx->font.characters[0].segments[4].b.x,ctx->font.characters[0].segments[4].b.y);
+	printf("First line: %f, %f, %f, %f\n", ctx->font.characters[0].segments[0].a.x, ctx->font.characters[0].segments[0].a.y,ctx->font.characters[0].segments[0].b.x,ctx->font.characters[0].segments[0].b.y);
+	printf("Fifth line: %f, %f, %f, %f\n", ctx->font.characters[0].segments[4].a.x, ctx->font.characters[0].segments[4].a.y,ctx->font.characters[0].segments[4].b.x,ctx->font.characters[0].segments[4].b.y);
 	printf("2nd character: %c, lines: %d, offset: %d\n", ctx->font.characters[1].name, ctx->font.characters[1].total_segments, ctx->font.characters[1].offset);
-	printf("First line: %d, %d, %d, %d\n", ctx->font.characters[1].segments[0].a.x, ctx->font.characters[1].segments[0].a.y,ctx->font.characters[1].segments[0].b.x,ctx->font.characters[1].segments[0].b.y);
-	printf("Fifth line: %d, %d, %d, %d\n", ctx->font.characters[1].segments[4].a.x, ctx->font.characters[1].segments[4].a.y,ctx->font.characters[1].segments[4].b.x,ctx->font.characters[1].segments[4].b.y);
+	printf("First line: %f, %f, %f, %f\n", ctx->font.characters[1].segments[0].a.x, ctx->font.characters[1].segments[0].a.y,ctx->font.characters[1].segments[0].b.x,ctx->font.characters[1].segments[0].b.y);
+	printf("Fifth line: %f, %f, %f, %f\n", ctx->font.characters[1].segments[4].a.x, ctx->font.characters[1].segments[4].a.y,ctx->font.characters[1].segments[4].b.x,ctx->font.characters[1].segments[4].b.y);
 	printf("3rd character: %c, lines: %d, offset: %d\n", ctx->font.characters[2].name, ctx->font.characters[2].total_segments, ctx->font.characters[2].offset);
-	printf("First line: %d, %d, %d, %d\n", ctx->font.characters[2].segments[0].a.x, ctx->font.characters[2].segments[0].a.y,ctx->font.characters[2].segments[0].b.x,ctx->font.characters[2].segments[0].b.y);
-	printf("Fifth line: %d, %d, %d, %d\n", ctx->font.characters[2].segments[4].a.x, ctx->font.characters[2].segments[4].a.y,ctx->font.characters[2].segments[4].b.x,ctx->font.characters[2].segments[4].b.y);
+	printf("First line: %f, %f, %f, %f\n", ctx->font.characters[2].segments[0].a.x, ctx->font.characters[2].segments[0].a.y,ctx->font.characters[2].segments[0].b.x,ctx->font.characters[2].segments[0].b.y);
+	printf("Fifth line: %f, %f, %f, %f\n", ctx->font.characters[2].segments[4].a.x, ctx->font.characters[2].segments[4].a.y,ctx->font.characters[2].segments[4].b.x,ctx->font.characters[2].segments[4].b.y);
 
 	return 1; //1 = app is running, 0 = app is not running/exit
 }
