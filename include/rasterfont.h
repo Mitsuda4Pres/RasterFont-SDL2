@@ -118,8 +118,7 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 
 //Private: used by printString to draw each character in the string. At the draw stage, characters consist of only line segments for faster drawing.
 //int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, struct RF_FontScaled *font);
-int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y);
-int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y, int height);
+int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y);
 
 //Scale
 //Set the font size based on width in pixels. Chosen size must be >= smallest_width of RF_Font.
@@ -154,14 +153,15 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 			pos += width * scalar;
 		} else {
 			int index = font->lookup[(int)str[i]];
-			struct RF_Character *c = &font->characters[index];	
+			struct RF_Character *c;	
 			//transform x/y by scale and position in the string
 			float tx = x + pos;
 			float ty = y;		//transform by scalar, additionally transform by any up/down shifts (lowercase j etc.)
 			if(args & OUTLINE) 
-				RF_drawCharacterOutline(renderer, c, scalar, tx, ty);
+				c = &font->characters[index];
 			else
-				RF_drawCharacterFilled(renderer, c, scalar, tx, ty, font->base_height);
+				c = &font->filled_chars[index];
+			RF_drawCharacter(renderer, c, scalar, tx, ty);
 			pos += width * scalar;			//When I get to varied width fonts, this should still work
 		}
 	}	
@@ -169,7 +169,7 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 }
 
 //Draw a single character given scalar and top-left position
-int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y){
+int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y){
 	for(int i=0; i<c->total_segments; i++){
 		float x1 = (scalar * c->segments[i].a.x) + x;
 		float y1 = (scalar * c->segments[i].a.y) + y;
@@ -180,8 +180,6 @@ int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, floa
 	return 0;
 }
 
-
-int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y, int height){
 	//How to  draw filled character....hmmmm.
 	//After some thinking I landed on a few posssible methods. The idea of a scanline finding turning "on/off" the fill routine
 	//The idea of just moving inward from the outer shape (could be fast but highly individualized per letter so real bad for design)
@@ -204,13 +202,7 @@ int RF_drawCharacterFilled(SDL_Renderer *renderer, struct RF_Character *c, float
 	//Maybe the designed base width is not always the optimal font size for an application, so there can be a "default" param by which the first font is loaded.
 	//Then drawCharacterFilled draws the character by its infill data (a series of horrizontal lines, like a 3d printer) instead of outline, which will obviously be
 	//faster, but probably not noticeably so.
-	for(int i=0; i<height-1; i++){
-		
-	}	
-	
 
-	return 0;
-}
 
 //Utility
 //
@@ -433,7 +425,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 	//
 	//start with an array size of 2 line segments per scanline. For 16 pt base font, full ascii set, this is only 128k once malloced by sizeof(RF_Line).
 	int array_size = font->base_height * font->total_characters * 4; //DEBUG: If we get a stack overflow OR out-of-bounds, check here first
-	font->filled_chars = malloc(array_size * sizeof(struct RF_Line));
+	font->filled_chars = malloc((array_size * sizeof(struct RF_Line)) + (256 * sizeof(struct RF_Character)));
 	int rows = font->base_height;
 	for(int i=0; i<font->total_characters; i++){	//character loop
 		//figure out how many segments then malloc then fill array with RF_Lines
@@ -441,7 +433,12 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		//Ok, I just looked up what ttf does and it's similar to above. Grid fit with hinting then scanline/winding number fill.	
 		//I'm going to try to circumvent this with intercepts. Here goes nothing.
 		struct RF_Character c = font->characters[i];
-
+		struct RF_Character filled;
+		filled.name = font->characters[i].name;
+		filled.offset = font->characters[i].offset;
+		filled.type = font->characters[i].type;
+		filled.segments = calloc(c.total_segments * rows, sizeof(struct RF_Line) * 4);
+		font->filled_chars[i] = filled;
 		//Point array to hold all the edge points in the character. Two segments on a line results in 4 SDL_FPoints. To be safe, I'll do 8. Free at end of character loop.
 		/*
 		SDL_FPoint **edges = calloc(rows, sizeof(SDL_FPPoint *));
@@ -458,14 +455,15 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		}
 		int *segments_in_row = calloc(rows, sizeof(int)); //segments_in_row[16], to carry the index counts and reiterate
 		*/
-		SDL_FPoint *edges = calloc(8, sizeof(SDL_Point));
-		if(edges == NULL){
-			font->error_msg = "Could not allocate edge point array.\n";
-			return 1;
-		}
+	
 		int seg_index = 0;
 		
 		for(int j=0; j<rows; j++){		//scanline loop
+			SDL_FPoint *edges = calloc(2 * c.total_segments, sizeof(SDL_FPoint));
+			if(edges == NULL){
+				font->error_msg = "Could not allocate edge point array.\n";
+				return 1;
+			}
 			struct RF_Line scan = {0, j, font->base_width, j};	//testing scanline
 			int index = 0;
 			for(int k=0; k<c.total_segments; k++){	//segment loop
@@ -494,6 +492,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 						toggle = 1;
 				}
 			}
+			free(edges);
 		}
 		font->filled_chars[i].total_segments = seg_index;
 		//I should now have edges[] filled with all scanline intersection points. Index should tell me how many there are.
@@ -504,7 +503,6 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		}
 		free(edges);
 		*/
-		free(edges);
 	}
 	return 0;
 }
