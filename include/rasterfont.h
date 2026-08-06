@@ -437,7 +437,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		filled.name = font->characters[i].name;
 		filled.offset = font->characters[i].offset;
 		filled.type = font->characters[i].type;
-		filled.segments = calloc(c.total_segments * rows, sizeof(struct RF_Line) * 4);
+		filled.segments = calloc(c.total_segments * rows, sizeof(struct RF_Line));
 		font->filled_chars[i] = filled;
 		//Point array to hold all the edge points in the character. Two segments on a line results in 4 SDL_FPoints. To be safe, I'll do 8. Free at end of character loop.
 		/*
@@ -459,7 +459,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		int seg_index = 0;
 		
 		for(int j=0; j<rows; j++){		//scanline loop
-			SDL_FPoint *edges = calloc(2 * c.total_segments, sizeof(SDL_FPoint));
+			SDL_FPoint *edges = calloc(rows * 2 * c.total_segments, sizeof(SDL_FPoint));
 			if(edges == NULL){
 				font->error_msg = "Could not allocate edge point array.\n";
 				return 1;
@@ -513,12 +513,21 @@ SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line t
 	//Three possible returns: SDL_Point of intercept, no intercept, colinear.
 	//y = mx + b ---> b = y - mx
 	float ms = 0; //slope of scanline
-	float mt = (target.a.y - target.b.y) / (target.a.x - target.b.x);
+	float mt; 
 	float bs = scan.a.y;	//y-intercept of horizontal line is any of its y-values
 	float bt = target.a.y - (mt * target.a.x);	//plug in values of a point on line to find y-intercept
 	float x_ret;
 	SDL_FPoint result;
+	//To avoid a divide by zero error, test if the line is vertical (x coords are the same)
+	if(target.a.x - target.b.x != 0)
+		mt = (target.a.y - target.b.y) / (target.a.x - target.b.x); //if not vertical, grab slope
+	else {
+		result.x = target.a.x;										//if vertical, intersection is at target.x, scan.y
+		result.y = scan.a.y;
+		return result;
+	}
 	if(ms == mt && bs == bt){
+			
 		result.x = -1;
 		result.y = -1;
 		return result; //colinear
