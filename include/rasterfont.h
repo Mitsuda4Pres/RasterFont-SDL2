@@ -457,6 +457,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		*/
 	
 		int seg_index = 0;
+		int toggle = 1;
 		
 		for(int j=0; j<rows; j++){		//scanline loop
 			SDL_FPoint *edges = calloc(rows * 2 * c.total_segments, sizeof(SDL_FPoint));
@@ -478,13 +479,12 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 				   	index++;	
 				}
 			}
-			int toggle = 1;
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
-				for(int k=1; k<index; k++){
+				for(int k=0; k<index-1; k++){
 					if(toggle == 1){
 						struct RF_Line l;
-						l.a = edges[k-1];
-						l.b = edges[k];
+						l.a = edges[k];
+						l.b = edges[k+1];
 						font->filled_chars[i].segments[seg_index] = l;
 						seg_index++;
 						toggle = 0;
@@ -513,21 +513,26 @@ SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line t
 	//Three possible returns: SDL_Point of intercept, no intercept, colinear.
 	//y = mx + b ---> b = y - mx
 	float ms = 0; //slope of scanline
-	float mt; 
 	float bs = scan.a.y;	//y-intercept of horizontal line is any of its y-values
-	float bt = target.a.y - (mt * target.a.x);	//plug in values of a point on line to find y-intercept
+	float mt; 
+	float bt;
 	float x_ret;
 	SDL_FPoint result;
 	//To avoid a divide by zero error, test if the line is vertical (x coords are the same)
-	if(target.a.x - target.b.x != 0)
+	if(target.a.x - target.b.x != 0){
 		mt = (target.a.y - target.b.y) / (target.a.x - target.b.x); //if not vertical, grab slope
-	else {
+		bt = target.a.y - (mt * target.a.x);	//plug in values of a point on line to find y-intercept
+	}
+	else if((target.a.y < scan.a.y && target.b.y > scan.a.y) || (target.a.y > scan.a.y && target.b.y < scan.a.y)){   //Find out if the vertical segment crosses the scanline
 		result.x = target.a.x;										//if vertical, intersection is at target.x, scan.y
 		result.y = scan.a.y;
 		return result;
+	} else {
+		result.x = -2;
+		result.y = -2;
+		return result;
 	}
 	if(ms == mt && bs == bt){
-			
 		result.x = -1;
 		result.y = -1;
 		return result; //colinear
