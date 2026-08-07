@@ -467,7 +467,6 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		*/
 	
 		int seg_index = 0;
-		int toggle = 1;
 		
 		for(int j=0; j<rows; j++){		//scanline loop
 			SDL_FPoint *edges = calloc(rows * 2 * c.total_segments, sizeof(SDL_FPoint));
@@ -505,6 +504,7 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
 				//Sorti edges by x first, then iterate to write.
 				qsort(edges, index, sizeof(SDL_FPoint), RF_sortFPointXAscending);
+				int toggle = 1;
 				for(int k=1; k<index; k++){
 					if(toggle == 1){
 						struct RF_Line l;
@@ -548,7 +548,7 @@ SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line t
 		mt = (target.a.y - target.b.y) / (target.a.x - target.b.x); //if not vertical, grab slope
 		bt = target.a.y - (mt * target.a.x);	//plug in values of a point on line to find y-intercept
 	}
-	else if((target.a.y < scan.a.y && target.b.y > scan.a.y) || (target.a.y > scan.a.y && target.b.y < scan.a.y)){   //Find out if the vertical segment crosses the scanline
+	else if((target.a.y <= scan.a.y && target.b.y >= scan.a.y) || (target.a.y >= scan.a.y && target.b.y <= scan.a.y)){   //Find out if the vertical segment crosses or ends on scanline
 		result.x = target.a.x;										//if vertical, intersection is at target.x, scan.y
 		result.y = scan.a.y;
 		return result;

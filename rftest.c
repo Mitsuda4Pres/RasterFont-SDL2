@@ -217,14 +217,14 @@ int draw(context *ctx){
 	SDL_RenderClear(ctx->renderer);
 	SDL_SetRenderDrawColor(ctx->renderer, 255,255,255,255);
 	//FC_DrawAlign(ctx->chrono_font, ctx->renderer, (SCREEN_WIDTH/2), 8, FC_ALIGN_CENTER, "%d Bubbles!", ctx->obj.bubble_count);
-//	RF_printString(ctx->renderer, 10, 10, 12, "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG", &ctx->font, 0);
-//	RF_printString(ctx->renderer, 20,100, 48, "THE QUICK BROWN FOX", &ctx->font, 0);
-//	RF_printString(ctx->renderer, 40,250, 96, "JUMPS OVER", &ctx->font, 0);
-//	RF_printString(ctx->renderer, 600,50, 16, "THE LAZY DOG", &ctx->font, 0);
-	RF_printString(ctx->renderer, 10, 10, 12, "D D D D D D D D", &ctx->font, 0);
-  	RF_printString(ctx->renderer, 20,100, 48, "D D D D D", &ctx->font, 0);                          //debug text display
-  	RF_printString(ctx->renderer, 40,250, 96, "D D D D D D D", &ctx->font, 0);                              
-  	RF_printString(ctx->renderer, 600,50, 16, "D D D D ", &ctx->font, 0);
+	RF_printString(ctx->renderer, 10, 10, 12, "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG", &ctx->font, 0);
+	RF_printString(ctx->renderer, 20,100, 48, "THE QUICK BROWN FOX", &ctx->font, 0);
+	RF_printString(ctx->renderer, 40,250, 96, "JUMPS OVER", &ctx->font, 0);
+	RF_printString(ctx->renderer, 600,50, 16, "THE LAZY DOG", &ctx->font, 0);
+//	RF_printString(ctx->renderer, 10, 10, 12, "D D D D D D D D", &ctx->font, 0);
+//  	RF_printString(ctx->renderer, 20,100, 48, "D D D D D", &ctx->font, 0);                          //debug text display
+//  	RF_printString(ctx->renderer, 40,250, 96, "D D D D D D D", &ctx->font, 0);                              
+//  	RF_printString(ctx->renderer, 600,50, 16, "D D D D ", &ctx->font, 0);
 	
 	//
 	int mx, my;
