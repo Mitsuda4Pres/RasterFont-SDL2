@@ -574,6 +574,14 @@ SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line t
 	}
 	//ms * (x) + bs = mt * (x) + bt --> ms(x) - mt(x) = bt - bs --> (bt - bs) / (ms - mt)
 	x_ret = (bt - bs) / (ms - mt);
+	//Fix rounding errors (i.e. in 'W', 10.99999 gets caught outside 11-14 range and point is dropped)
+	float rem = (float)(x_ret - (int)x_ret);
+	if(rem > 0.9f)
+		x_ret = (int)x_ret + 1;
+	else if(rem > 0 && rem < 0.1f)
+		x_ret = (int)x_ret;
+	
+
 	//is x_ret within the bounds of the target line segment?
 	int small_tx = target.a.x;
 	int big_tx = target.b.x;
