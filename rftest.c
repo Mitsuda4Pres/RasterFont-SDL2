@@ -35,6 +35,8 @@ typedef struct{
 	SDL_Window *window;
 	SDL_Renderer *renderer;
 	struct RF_Font font;
+	TTF_Font *satoshi;
+	TTF_Font *chronotype;
 	int app_is_running;
 	int debug_text;    //toggle for debug text display
 	//
@@ -123,6 +125,15 @@ int initialize_window(context *ctx) {
 	//
 	//load raster font
 	ctx->font = RF_loadFontFromFile("resources/classic.rff");
+	//load ttf fonts
+	ctx->satoshi = TTF_OpenFont("resources/Satoshi-Variable.ttf", 24);
+	if(!ctx->satoshi) {
+		printf("Faiiled to load satooshi font.\n");
+	}
+	ctx->chronotype = TTF_OpenFont("resources/chronotype.ttf", 24);
+	if(!ctx->satoshi) {
+		printf("Faiiled to load chronotype font.\n");
+	}
 	
 	if(strcmp(ctx->font.error_msg, "clear") != 0)
 		printf("RF_loadctx->fontFromFile() produced error: %s\n", ctx->font.error_msg);

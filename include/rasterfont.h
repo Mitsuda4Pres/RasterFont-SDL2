@@ -158,11 +158,16 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 			//transform x/y by scale and position in the string
 			float tx = x + pos;
 			float ty = y;		//transform by scalar, additionally transform by any up/down shifts (lowercase j etc.)
-			if(args & OUTLINE) 
+			if(args & OUTLINE){ 
 				c = &font->characters[index];
-			else
+				RF_drawCharacter(renderer, c, scalar, tx, ty);
+			}
+			else{
 				c = &font->filled_chars[index];
-			RF_drawCharacter(renderer, c, scalar, tx, ty);
+				RF_drawCharacter(renderer, c, scalar, tx, ty);
+				c = &font->characters[index];
+				RF_drawCharacter(renderer, c, scalar, tx, ty);	
+			}
 			pos += width * scalar;			//When I get to varied width fonts, this should still work
 		}
 	}	
