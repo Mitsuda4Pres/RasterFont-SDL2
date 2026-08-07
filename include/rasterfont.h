@@ -133,6 +133,7 @@ struct RF_Line *RF_calcQuadBezierAtScale(struct RF_CharacterTemplate c, float sc
 struct RF_Font RF_loadFontFromFile(char *filename);
 struct RF_Font *RF_loadFontFromFileP(char *filename);
 SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line target);
+int RF_sortFPointXAscending(const void *a, const void *b);
 char *RF_removeFirstChar(char *s, int slen);
 struct RF_Character RF_makeCharacterStructFromFile(char *buffer);
 int RF_buildFilledCharacterArray(struct RF_Font *font);
@@ -417,6 +418,15 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 	return font; //This is now a pretty big struct. I should get the pointer version working.
 }
 
+int RF_sortFPointXAscending(const void *a, const void *b){
+	SDL_FPoint arg1 = *(const SDL_FPoint *)a;
+	SDL_FPoint arg2 = *(const SDL_FPoint *)b;
+
+	if(arg1.x < arg2.x) return -1;
+	if(arg1.x > arg2.x) return 1;
+	return 0;
+
+}
 
 int RF_buildFilledCharacterArray(struct RF_Font *font){
 	//I will need to malloc font.filled_chars some how. Do I need to do a whole first pass just to find out how many segments, then a second
@@ -479,12 +489,27 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 				   	index++;	
 				}
 			}
+
+			//Before storing line segments, we need to do some sorting and culling. This is the heart of whether this is a viable method. The letter D at
+			//scanline 1 returns 5 intersections, out of order: (11,1)(1,1)(11,1)(0,1)(12,1). In this case, if I draw them backwards, it works. But that 
+			//likely won't work in all cases. However, since the segments[] array is written in backwards order from the rff file, and thus reverse of
+			//how i've been thinking about the draw order, maybe I start by traversing edges backward. That doesn't work, lmao. I think we need to sort first.
+			//Following line (first gap in D) returns: (1,2)(12,2)(0,2)(13,2). What I want is: (0,2)(1,2)(12,2)(13,2) or reverse. Here sorting by x works. 
+			//In the previous line, sorting by X yields (0,1)(1,1)(11,1)(11,1)(12,1). If I cull repeats I get, (0,1)(1,1)(11,1)(12,1) which is not what I want. 
+			//The issue is that I have a horizontal as well as three verticals. What if I return nothing for horzontals, trusting that they will be filled by the partnering
+			//end vertices, then sort by x?
+
+
+
+
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
-				for(int k=0; k<index-1; k++){
+				//Sorti edges by x first, then iterate to write.
+				qsort(edges, index, sizeof(SDL_FPoint), RF_sortFPointXAscending);
+				for(int k=1; k<index; k++){
 					if(toggle == 1){
 						struct RF_Line l;
 						l.a = edges[k];
-						l.b = edges[k+1];
+						l.b = edges[k-1];
 						font->filled_chars[i].segments[seg_index] = l;
 						seg_index++;
 						toggle = 0;
@@ -533,8 +558,8 @@ SDL_FPoint RF_findIntersectionWithScanline(struct RF_Line scan, struct RF_Line t
 		return result;
 	}
 	if(ms == mt && bs == bt){
-		result.x = -1;
-		result.y = -1;
+		result.x = -2;
+		result.y = -2;
 		return result; //colinear
 	}
 	if(ms == mt && bs != bt){
