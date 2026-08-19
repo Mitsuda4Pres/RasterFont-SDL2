@@ -489,44 +489,29 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 			//end vertices, then sort by x?
 
 
-			//Break here and check content of edges[], then compare to culled_edges
+
 
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
-				//Thinking about how to clean the points array. We are sorting it, but do I need to cull repeat points from it first? That should eliminate some stray lines
-				//caused by zero-length lines throwing off the edge pass count.
-				//To cull repeat points, I guess find length of edges then run a nested loop to write non repeated point pairs to a new culled array
-				//index == length of edges[]
-				SDL_FPoint *culled_edges = calloc(index, sizeof(SDL_FPoint));
-				int cindex = 0;
-				for(int k=0; k<index-1; k++){
-					int pass = 1;
-					for(int l=1; l<index; l++){
-						if(edges[k].x == edges[l].x && edges[k].y == edges[l].y)
-							pass = 0;
-					}
-					if(pass == 1){
-						culled_edges[cindex] = edges[k];
-						cindex++;							//yes I know i can do this inline above, but this is more readable to me.
-					}
-				}
-				culled_edges[cindex] = edges[index-1];
-				cindex++;
-											
 				//Sorti edges by x first, then iterate to write.
-				qsort(culled_edges, cindex, sizeof(SDL_FPoint), RF_sortFPointXAscending);
+				qsort(edges, index, sizeof(SDL_FPoint), RF_sortFPointXAscending);
 				int toggle = 1;
-				for(int k=1; k<cindex; k++){
-					if(toggle == 1){
-						struct RF_Line l;
-						l.a = culled_edges[k];
-						l.b = culled_edges[k-1];
-						font->filled_chars[i].segments[seg_index] = l;
-						seg_index++;
-						toggle = 0;
-					} else
-						toggle = 1;
+				//culling points wasn't the move. In fact we want the duplicates in so we know where to adjust the toggler.
+				//if two points next to each other are identical, simply skip the wrrite without adjusting the toggler.
+				//move up the loop, and you'll only get the actual lines, which you can then draw in order???
+
+				for(int k=1; k<index; k++){
+					if(edges[k].x != edges[k-1].x){	//In practice, the y-values should always all be the same, right?
+						if(toggle == 1){
+							struct RF_Line l;
+							l.a = edges[k];
+							l.b = edges[k-1];
+							font->filled_chars[i].segments[seg_index] = l;
+							seg_index++;
+							toggle = 0;
+						} else
+							toggle = 1;
+					}
 				}
-				free(culled_edges);
 			}
 			free(edges);
 		}
