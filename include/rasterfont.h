@@ -28,6 +28,7 @@
 #define BOLD	0x02
 #define	DASHED	0x04
 
+
 //enum to define a character's type, to allow for toUpper type functions down the road.
 enum RF_CharacterType {
 	UPPERCASE,
@@ -39,7 +40,16 @@ enum RF_CharacterType {
 //Line structure
 struct RF_Line {
 	SDL_FPoint a, b;
+	char type;		//0 = no draw, 1 = draw, 2 = horizontal
 };
+
+//Edge point struct
+struct RF_EdgePoint {
+	SDL_FPoint p;
+	char type;		//0 = no draw, 1 = draw, 2 = horizontal
+};
+
+
 
 //The basic information for a quadratic bezier curve. The degrees of accuracy will be determined by scale.
 struct RF_Quad_Bezier {
@@ -118,7 +128,8 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 
 //Private: used by printString to draw each character in the string. At the draw stage, characters consist of only line segments for faster drawing.
 //int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, struct RF_FontScaled *font);
-int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y);
+int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, int size, float x, float y);
+int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, int size, float x, float y);
 
 //Scale
 //Set the font size based on width in pixels. Chosen size must be >= smallest_width of RF_Font.
@@ -147,7 +158,7 @@ int RF_destroyFont(struct RF_Font *f);
 int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str, struct RF_Font *font, int args){
 	//RF_printStringOutline could get conslidated with printString as a flag.
 	int width = font->base_width; //monospace for starters
-	float scalar = (float)size/(float)width;
+	float scalar = (float)size/(float)width;  
 	float pos = 0;				//starting position
 	for(int i=0; i<strlen(str); i++){
 		if(str[i] == 32){
@@ -160,13 +171,12 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 			float ty = y;		//transform by scalar, additionally transform by any up/down shifts (lowercase j etc.)
 			if(args & OUTLINE){ 
 				c = &font->characters[index];
-				RF_drawCharacter(renderer, c, scalar, tx, ty);
+				RF_drawCharacterOutline(renderer, c, size, tx, ty);
 			}
 			else{
-				c = &font->filled_chars[index];
-				RF_drawCharacter(renderer, c, scalar, tx, ty);
-				c = &font->characters[index];
-				RF_drawCharacter(renderer, c, scalar, tx, ty);	
+				//c = &font->filled_chars[index];
+				RF_drawCharacterOutline(renderer, c, size, tx, ty);
+				RF_drawCharacter(renderer, c, size, tx, ty);	
 			}
 			pos += width * scalar;			//When I get to varied width fonts, this should still work
 		}
@@ -174,8 +184,80 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 	return 0;
 }
 
+int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, int size, float x, float y){
+	//First, scale outline to a new segment array
+	float scalar = (float)size/(float)c->width;
+	struct RF_Line *scaled_outline = calloc(c->total_segments, sizeof(struct RF_Line));
+	for(int i=0; i<c->total_segments; i++){
+		float x1 = (scalar * c->segments[i].a.x) + x;
+		float y1 = (scalar * c->segments[i].a.y) + y;
+		float x2 = (scalar * c->segments[i].b.x) + x;
+		float y2 = (scalar * c->segments[i].b.y) + y;
+		SDL_FPoint a = {x1, y1};
+		SDL_FPoint b = {x2, y2};
+		struct RF_Line l = {a, b, c->segments[i].type};
+		scaled_outline[i] = l;
+	}
+	int rows = size; //In the future size needs to be replaced with "rows" derived from height * scalar. Right now, we are monospace.
+	for(int j=0; j<rows; j++){		//scanline loop. 									//
+		//New edgepoints need to inherit a type from the line segment they came from, which needs to be load from file.
+		struct RF_EdgePoint *edges = calloc(c->total_segments * rows * 2, sizeof(struct RF_EdgePoint));   //Same size as filled.segments but based on SDL_FPoint, not RF_Line, so add * 2.
+		if(edges == NULL){
+			printf("Could not allocate edge point array.\n");
+			return 1;
+		}
+		struct RF_Line scan = {0, j, c->width, j};	//testing scanline
+		int index = 0;
+		for(int k=0; k<c->total_segments; k++){	//segment loop
+			SDL_FPoint p = RF_findIntersectionWithScanline(scan, scaled_outline[k]);
+			if(p.x == -1){	//colinear
+				edges[index].p = scaled_outline[k].a;
+				//grab segment type
+				edges[index].type = scaled_outline[k].type;
+				index++;
+				edges[index].p = scaled_outline[k].b;
+				//grab segment type
+				edges[index].type = scaled_outline[k].type;
+				index++;
+			} else if(p.x != -2) {		//If there is a result
+				edges[index].p = p;
+				//grab segment type
+				edges[index].type = scaled_outline[k].type;
+			   	index++;	
+			}
+		}
+		//In order to determing when to draw and when not to, each segment has a type of draw or no draw which it passes on to the scanline intersection point.
+		//Now each ppoint is a  struct with a .type element.
+
+		if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
+			//Sorti edges by x first, then iterate to write.
+			qsort(edges, index, sizeof(struct RF_EdgePoint), RF_sortFPointXAscending);
+			//culling points wasn't the move. In fact we want the duplicates in so we know where to adjust the toggler.
+			//if two points next to each other are identical, simply skip the wrrite without adjusting the toggler.
+			//move up the loop, and you'll only get the actual lines, which you can then draw in order???
+
+			//not quite right. if the duplicate is at the beginning, it needs to flip the toggle. if it's in the middle, it needs to follow toggle rules.
+			//but what if it's in the beginning and in the middle?
+			for(int k=0; k<index-1; k++){
+				if(edges[k].type != 0){
+					struct RF_Line l;
+					l.a = edges[k].p;
+					l.b = edges[k+1].p;
+					SDL_RenderDrawLine(renderer, l.a.x, l.a.y, l.b.x, l.b.y);
+					//font->filled_chars[i].segments[seg_index] = l;
+					//seg_index++;
+				}
+			}
+			
+		}
+		free(edges);
+	}
+	return 0;
+}
+
 //Draw a single character given scalar and top-left position
-int RF_drawCharacter(SDL_Renderer *renderer, struct RF_Character *c, float scalar, float x, float y){
+int RF_drawCharacterOutline(SDL_Renderer *renderer, struct RF_Character *c, int size, float x, float y){
+	float scalar = (float)size/(float)c->width;
 	for(int i=0; i<c->total_segments; i++){
 		float x1 = (scalar * c->segments[i].a.x) + x;
 		float y1 = (scalar * c->segments[i].a.y) + y;
@@ -316,6 +398,7 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 						font.characters[main_offset] = RF_makeCharacterStructFromFile(buffer);
 						font.characters[main_offset].type = UPPERCASE;
 						font.characters[main_offset].offset = main_offset;
+						font.characters[main_offset].width = font.base_width;
 						font.lookup[font.characters[main_offset].name] = main_offset; //Add current characters offset to the ascii lookup table
 						main_offset++;
 					}
@@ -326,6 +409,7 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 						font.characters[main_offset] = RF_makeCharacterStructFromFile(buffer);
 						font.characters[main_offset].type = LOWERCASE;
 						font.characters[main_offset].offset = main_offset;
+						font.characters[main_offset].width = font.base_width;
 						font.lookup[font.characters[main_offset].name] = main_offset; //Add current characters offset to the ascii lookup table
 						main_offset++;
 					}
@@ -336,6 +420,7 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 						font.characters[main_offset] = RF_makeCharacterStructFromFile(buffer);
 						font.characters[main_offset].type = NUMBER;
 						font.characters[main_offset].offset = main_offset;
+						font.characters[main_offset].width = font.base_width;
 						font.lookup[font.characters[main_offset].name] = main_offset; //Add current characters offset to the ascii lookup table
 						main_offset++;
 					}
@@ -346,6 +431,7 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 						font.characters[main_offset] = RF_makeCharacterStructFromFile(buffer);
 						font.characters[main_offset].type = SYMBOL;
 						font.characters[main_offset].offset = main_offset;
+						font.characters[main_offset].width = font.base_width;
 						font.lookup[font.characters[main_offset].name] = main_offset; //Add current characters offset to the ascii lookup table
 						main_offset++;
 					}
@@ -405,6 +491,13 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 			segment.b.y = RF_parseLinePointFromBufferToStruct(buffer, &head, &tail);	//b line, y coord
 			tail++;
 			head = tail;
+			//Final number in line represents fill type
+			int type = RF_parseLinePointFromBufferToStruct(buffer, &head, &tail);	//fill type
+			if(type >= 0 && type <=2)
+				segment.type = (char)type;
+			else{
+				printf("Error: bad line type in character %c at line number %d.", font.characters[main_offset].name, line_count-1);
+			}
 			font.characters[main_offset].segments[line_count-1] = segment;	//lines will be input to the struct in reverse order from the file because it shouldn't matter
 			line_count--;
 			if(line_count == 0){
@@ -418,17 +511,17 @@ struct RF_Font RF_loadFontFromFile(char *filename){
 		}	
 	}
 	
-	RF_buildFilledCharacterArray(&font);
+	//RF_buildFilledCharacterArray(&font);
 
 	return font; //This is now a pretty big struct. I should get the pointer version working.
 }
 
 int RF_sortFPointXAscending(const void *a, const void *b){
-	SDL_FPoint arg1 = *(const SDL_FPoint *)a;
-	SDL_FPoint arg2 = *(const SDL_FPoint *)b;
+	struct RF_EdgePoint arg1 = *(const struct RF_EdgePoint *)a;
+	struct RF_EdgePoint arg2 = *(const struct RF_EdgePoint *)b;
 
-	if(arg1.x < arg2.x) return -1;
-	if(arg1.x > arg2.x) return 1;
+	if(arg1.p.x < arg2.p.x) return -1;
+	if(arg1.p.x > arg2.p.x) return 1;
 	return 0;
 
 }
@@ -458,8 +551,11 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 	
 		int seg_index = 0;
 		
+		//On drawCharacter version, start here!!!	
 		for(int j=0; j<rows; j++){		//scanline loop
-			SDL_FPoint *edges = calloc(c.total_segments * rows * 2, sizeof(SDL_FPoint));   //Same size as filled.segments but based on SDL_FPoint, not RF_Line, so add * 2.
+										//
+			//New edgepoints need to inherit a type from the line segment they came from, which needs to be load from file.
+			struct RF_EdgePoint *edges = calloc(c.total_segments * rows * 2, sizeof(struct RF_EdgePoint));   //Same size as filled.segments but based on SDL_FPoint, not RF_Line, so add * 2.
 			if(edges == NULL){
 				font->error_msg = "Could not allocate edge point array.\n";
 				return 1;
@@ -469,49 +565,43 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 			for(int k=0; k<c.total_segments; k++){	//segment loop
 				SDL_FPoint p = RF_findIntersectionWithScanline(scan, c.segments[k]);
 				if(p.x == -1){	//colinear
-					edges[index] = c.segments[k].a;
+					edges[index].p = c.segments[k].a;
+					//grab segment type
+					edges[index].type = c.segments[k].type;
 					index++;
-					edges[index] = c.segments[k].b;
+					edges[index].p = c.segments[k].b;
+					//grab segment type
+					edges[index].type = c.segments[k].type;
 					index++;
 				} else if(p.x != -2) {		//If there is a result
-					edges[index] = p;
+					edges[index].p = p;
+					//grab segment type
+					edges[index].type = c.segments[k].type;
 				   	index++;	
 				}
 			}
-
-			//Before storing line segments, we need to do some sorting and culling. This is the heart of whether this is a viable method. The letter D at
-			//scanline 1 returns 5 intersections, out of order: (11,1)(1,1)(11,1)(0,1)(12,1). In this case, if I draw them backwards, it works. But that 
-			//likely won't work in all cases. However, since the segments[] array is written in backwards order from the rff file, and thus reverse of
-			//how i've been thinking about the draw order, maybe I start by traversing edges backward. That doesn't work, lmao. I think we need to sort first.
-			//Following line (first gap in D) returns: (1,2)(12,2)(0,2)(13,2). What I want is: (0,2)(1,2)(12,2)(13,2) or reverse. Here sorting by x works. 
-			//In the previous line, sorting by X yields (0,1)(1,1)(11,1)(11,1)(12,1). If I cull repeats I get, (0,1)(1,1)(11,1)(12,1) which is not what I want. 
-			//The issue is that I have a horizontal as well as three verticals. What if I return nothing for horzontals, trusting that they will be filled by the partnering
-			//end vertices, then sort by x?
-
-
-
+			//In order to determing when to draw and when not to, each segment has a type of draw or no draw which it passes on to the scanline intersection point.
+			//Now each ppoint is a  struct with a .type element.
 
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
 				//Sorti edges by x first, then iterate to write.
-				qsort(edges, index, sizeof(SDL_FPoint), RF_sortFPointXAscending);
-				int toggle = 1;
+				qsort(edges, index, sizeof(struct RF_EdgePoint), RF_sortFPointXAscending);
 				//culling points wasn't the move. In fact we want the duplicates in so we know where to adjust the toggler.
 				//if two points next to each other are identical, simply skip the wrrite without adjusting the toggler.
 				//move up the loop, and you'll only get the actual lines, which you can then draw in order???
 
-				for(int k=1; k<index; k++){
-					if(edges[k].x != edges[k-1].x){	//In practice, the y-values should always all be the same, right?
-						if(toggle == 1){
-							struct RF_Line l;
-							l.a = edges[k];
-							l.b = edges[k-1];
-							font->filled_chars[i].segments[seg_index] = l;
-							seg_index++;
-							toggle = 0;
-						} else
-							toggle = 1;
+				//not quite right. if the duplicate is at the beginning, it needs to flip the toggle. if it's in the middle, it needs to follow toggle rules.
+				//but what if it's in the beginning and in the middle?
+				for(int k=0; k<index-1; k++){
+					if(edges[k].type != 0){
+						struct RF_Line l;
+						l.a = edges[k].p;
+						l.b = edges[k+1].p;
+						font->filled_chars[i].segments[seg_index] = l;
+						seg_index++;
 					}
 				}
+				
 			}
 			free(edges);
 		}
