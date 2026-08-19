@@ -166,11 +166,11 @@ int RF_printString(SDL_Renderer *renderer, float x, float y, int size, char *str
 		} else {
 			int index = font->lookup[(int)str[i]];
 			struct RF_Character *c;	
+			c = &font->characters[index];
 			//transform x/y by scale and position in the string
 			float tx = x + pos;
 			float ty = y;		//transform by scalar, additionally transform by any up/down shifts (lowercase j etc.)
 			if(args & OUTLINE){ 
-				c = &font->characters[index];
 				RF_drawCharacterOutline(renderer, c, size, tx, ty);
 			}
 			else{
