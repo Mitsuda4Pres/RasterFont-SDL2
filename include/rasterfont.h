@@ -454,27 +454,12 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 		filled.type = font->characters[i].type;
 		filled.segments = calloc(c.total_segments * rows, sizeof(struct RF_Line));
 		font->filled_chars[i] = filled;
-		//Point array to hold all the edge points in the character. Two segments on a line results in 4 SDL_FPoints. To be safe, I'll do 8. Free at end of character loop.
-		/*
-		SDL_FPoint **edges = calloc(rows, sizeof(SDL_FPPoint *));
-		if(edges == NULL){
-			font->error_msg = "Could not allocate filled character edge point array.\n";
-			return NULL;
-		}
-		for(int j=0; j<rows; j++){
-			edges[j] = calloc(8, sizeof(SDL_FPoint);
-			if(edges[j] == NULL){
-				font->error_msg = "Could not allocate row of filled character edge point array.\n"
-				return NULL;
-			}
-		}
-		int *segments_in_row = calloc(rows, sizeof(int)); //segments_in_row[16], to carry the index counts and reiterate
-		*/
+
 	
 		int seg_index = 0;
 		
 		for(int j=0; j<rows; j++){		//scanline loop
-			SDL_FPoint *edges = calloc(rows * 2 * c.total_segments, sizeof(SDL_FPoint));
+			SDL_FPoint *edges = calloc(c.total_segments * rows * 2, sizeof(SDL_FPoint));   //Same size as filled.segments but based on SDL_FPoint, not RF_Line, so add * 2.
 			if(edges == NULL){
 				font->error_msg = "Could not allocate edge point array.\n";
 				return 1;
@@ -504,23 +489,44 @@ int RF_buildFilledCharacterArray(struct RF_Font *font){
 			//end vertices, then sort by x?
 
 
-
+			//Break here and check content of edges[], then compare to culled_edges
 
 			if(index > 1){		//I think there is an edge case where only one point is given, in which case, don't bother drawing, it will should get filled by the outline.
+				//Thinking about how to clean the points array. We are sorting it, but do I need to cull repeat points from it first? That should eliminate some stray lines
+				//caused by zero-length lines throwing off the edge pass count.
+				//To cull repeat points, I guess find length of edges then run a nested loop to write non repeated point pairs to a new culled array
+				//index == length of edges[]
+				SDL_FPoint *culled_edges = calloc(index, sizeof(SDL_FPoint));
+				int cindex = 0;
+				for(int k=0; k<index-1; k++){
+					int pass = 1;
+					for(int l=1; l<index; l++){
+						if(edges[k].x == edges[l].x && edges[k].y == edges[l].y)
+							pass = 0;
+					}
+					if(pass == 1){
+						culled_edges[cindex] = edges[k];
+						cindex++;							//yes I know i can do this inline above, but this is more readable to me.
+					}
+				}
+				culled_edges[cindex] = edges[index-1];
+				cindex++;
+											
 				//Sorti edges by x first, then iterate to write.
-				qsort(edges, index, sizeof(SDL_FPoint), RF_sortFPointXAscending);
+				qsort(culled_edges, cindex, sizeof(SDL_FPoint), RF_sortFPointXAscending);
 				int toggle = 1;
-				for(int k=1; k<index; k++){
+				for(int k=1; k<cindex; k++){
 					if(toggle == 1){
 						struct RF_Line l;
-						l.a = edges[k];
-						l.b = edges[k-1];
+						l.a = culled_edges[k];
+						l.b = culled_edges[k-1];
 						font->filled_chars[i].segments[seg_index] = l;
 						seg_index++;
 						toggle = 0;
 					} else
 						toggle = 1;
 				}
+				free(culled_edges);
 			}
 			free(edges);
 		}
